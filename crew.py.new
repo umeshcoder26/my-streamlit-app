@@ -1,0 +1,70 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+def _build_llm():
+    api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "No LLM API key found. Add OPENROUTER_API_KEY or GEMINI_API_KEY to your .env file."
+        )
+
+    try:
+        from crewai import LLM
+    except Exception as exc:
+        raise RuntimeError(
+            "The CrewAI LLM provider is unavailable in this environment. "
+            "Install it with: uv add \"crewai[google-genai]\""
+        ) from exc
+
+    try:
+        return LLM(
+            model="openrouter/google/gemini-2.5-flash",
+            api_key=api_key,
+            base_url="https://openrouter.ai/api/v1",
+            temperature=0.2,
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            "The LLM provider could not be initialized. Check your API key and provider setup."
+        ) from exc
+
+
+def build_and_run_crew(market="NSE", num_stocks=15) -> str:
+    try:
+        from crewai import Crew, Process
+        from agents import create_stock_scout, create_analyst, create_strategist
+        from tasks import create_scouting_task, create_analysis_task, create_strategy_task
+
+        llm = _build_llm()
+    except RuntimeError as exc:
+        return (
+            "## Analysis unavailable\n\n"
+            f"{exc}\n\n"
+            "The app can still show the stock scanning logic, but the CrewAI agents need a working provider configuration to generate the report."
+        )
+    except Exception as exc:
+        return (
+            "## Analysis unavailable\n\n"
+            f"{exc}\n\n"
+            "The app can still show the stock scanning logic, but the CrewAI agents need a working provider configuration to generate the report."
+        )
+
+    scout = create_stock_scout(llm)
+    analyst = create_analyst(llm)
+    strategist = create_strategist(llm)
+
+    task1 = create_scouting_task(scout, market=market, num_stocks=num_stocks)
+    task2 = create_analysis_task(analyst, context_tasks=[task1])
+    task3 = create_strategy_task(strategist, context_tasks=[task1, task2])
+
+    crew = Crew(
+        agents=[scout, analyst, strategist],
+        tasks=[task1, task2, task3],
+        process=Process.sequential,
+        verbose=True,
+    )
+
+    return str(crew.kickoff())

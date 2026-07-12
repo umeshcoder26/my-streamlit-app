@@ -1,0 +1,11 @@
+crewai
+crewai-tools
+yfinance
+pandas
+ta
+streamlit
+python-dotenv
+langchain-openai
+openai
+nsepython
+requests
